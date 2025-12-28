@@ -77,7 +77,8 @@ export function setupRequestHandlers() {
         if (!db.data.requests) return null;
         const index = db.data.requests.findIndex(r => r.id === data.id);
         if (index !== -1) {
-            db.data.requests[index] = { ...db.data.requests[index], ...data };
+            const originalCreatedAt = db.data.requests[index].createdAt;
+            db.data.requests[index] = { ...db.data.requests[index], ...data, createdAt: originalCreatedAt };
             await db.write();
             return db.data.requests[index];
         }

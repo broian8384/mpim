@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import ActivityLogger from '../utils/ActivityLogger';
-import { Plus, Trash2, Database, Stethoscope, Shield, Edit2, Search, X, ChevronLeft, ChevronRight, Activity, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Database, Stethoscope, Shield, Edit2, Search, X, ChevronLeft, ChevronRight, Activity, ArrowUpDown, ArrowUp, ArrowDown, Target } from 'lucide-react';
 
 const isMasterElectron = () => window.api && window.api.master;
 
@@ -22,16 +22,13 @@ const migrateInsurances = (data) => {
     return data;
 };
 
-const DEFAULT_DOCTORS = ['Dr. Budi Santoso, Sp.PD', 'Dr. Siti Aminah, Sp.A', 'Dr. Hendra Gunawan, Sp.B', 'Dr. Ratna Dewi, Sp.OG', 'Dr. Andi Wijaya, Sp.JP'];
-const DEFAULT_INSURANCES = ['BPJS Kesehatan', 'Prudential', 'Allianz', 'Manulife', 'AIA', 'Sinarmas', 'Admedika', 'Umum/Pribadi'];
-const DEFAULT_SERVICES = ['Rawat Jalan (RJ)', 'Rawat Inap (RI)', 'Riwayat Berobat', 'Vaksin', 'Visum et Repertum', 'Lainnya'];
-
 export default function MasterData() {
     // Data States
     const [doctors, setDoctors] = useState([]);
     const [insurances, setInsurances] = useState([]);
     const [services, setServices] = useState([]);
-    const [activeTab, setActiveTab] = useState('doctors'); // 'doctors', 'insurances', 'services'
+    const [requestPurposes, setRequestPurposes] = useState([]);
+    const [activeTab, setActiveTab] = useState('doctors'); // 'doctors', 'insurances', 'services', 'purposes'
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -58,21 +55,28 @@ export default function MasterData() {
         if (isMasterElectron()) {
             const d = await window.api.master.getDoctors();
             const i = await window.api.master.getInsurances();
+            const s = await window.api.master.getServices();
+            const p = await window.api.master.getRequestPurposes();
             setDoctors(migrateDoctors(d) || []);
             setInsurances(migrateInsurances(i) || []);
+            setServices(migrateInsurances(s) || []);
+            setRequestPurposes(migrateInsurances(p) || []);
         } else {
+            // Web mode - use localStorage, default to empty arrays for clean install
             const savedDoc = localStorage.getItem('mpim_doctors');
             const savedIns = localStorage.getItem('mpim_insurances');
             const savedSvc = localStorage.getItem('mpim_services');
+            const savedPurposes = localStorage.getItem('mpim_request_purposes');
 
-            // Use Saved or Default
-            const docData = savedDoc ? JSON.parse(savedDoc) : DEFAULT_DOCTORS;
-            const insData = savedIns ? JSON.parse(savedIns) : DEFAULT_INSURANCES;
-            const svcData = savedSvc ? JSON.parse(savedSvc) : DEFAULT_SERVICES;
+            const docData = savedDoc ? JSON.parse(savedDoc) : [];
+            const insData = savedIns ? JSON.parse(savedIns) : [];
+            const svcData = savedSvc ? JSON.parse(savedSvc) : [];
+            const purposesData = savedPurposes ? JSON.parse(savedPurposes) : [];
 
             setDoctors(migrateDoctors(docData));
             setInsurances(migrateInsurances(insData));
             setServices(migrateInsurances(svcData));
+            setRequestPurposes(migrateInsurances(purposesData));
         }
     };
 
@@ -85,10 +89,14 @@ export default function MasterData() {
             setInsurances(newData);
             if (isMasterElectron()) window.api.master.saveInsurances(newData);
             else localStorage.setItem('mpim_insurances', JSON.stringify(newData));
-        } else {
+        } else if (type === 'services') {
             setServices(newData);
             if (isMasterElectron()) window.api.master.saveServices(newData);
             else localStorage.setItem('mpim_services', JSON.stringify(newData));
+        } else if (type === 'purposes') {
+            setRequestPurposes(newData);
+            if (isMasterElectron()) window.api.master.saveRequestPurposes(newData);
+            else localStorage.setItem('mpim_request_purposes', JSON.stringify(newData));
         }
     };
 
@@ -106,8 +114,12 @@ export default function MasterData() {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const list = activeTab === 'doctors' ? [...doctors] : (activeTab === 'insurances' ? [...insurances] : [...services]);
-        const moduleName = activeTab === 'doctors' ? 'Doctors' : activeTab === 'insurances' ? 'Insurances' : '  Services';
+        const list = activeTab === 'doctors' ? [...doctors] :
+            activeTab === 'insurances' ? [...insurances] :
+                activeTab === 'services' ? [...services] : [...requestPurposes];
+        const moduleName = activeTab === 'doctors' ? 'Doctors' :
+            activeTab === 'insurances' ? 'Insurances' :
+                activeTab === 'services' ? 'Services' : 'Request Purposes';
 
         if (isEditMode) {
             // Edit
@@ -141,8 +153,12 @@ export default function MasterData() {
 
     const confirmDelete = () => {
         const id = deleteModal.id;
-        const list = activeTab === 'doctors' ? [...doctors] : (activeTab === 'insurances' ? [...insurances] : [...services]);
-        const moduleName = activeTab === 'doctors' ? 'Doctors' : activeTab === 'insurances' ? 'Insurances' : 'Services';
+        const list = activeTab === 'doctors' ? [...doctors] :
+            activeTab === 'insurances' ? [...insurances] :
+                activeTab === 'services' ? [...services] : [...requestPurposes];
+        const moduleName = activeTab === 'doctors' ? 'Doctors' :
+            activeTab === 'insurances' ? 'Insurances' :
+                activeTab === 'services' ? 'Services' : 'Request Purposes';
         const deletedItem = list.find(item => item.id === id);
 
         const newList = list.filter(item => item.id !== id);
@@ -167,7 +183,9 @@ export default function MasterData() {
     };
 
     // Get Current List and Apply Search
-    let currentList = activeTab === 'doctors' ? doctors : (activeTab === 'insurances' ? insurances : services);
+    let currentList = activeTab === 'doctors' ? doctors :
+        activeTab === 'insurances' ? insurances :
+            activeTab === 'services' ? services : requestPurposes;
 
     // Apply Search Filter
     if (searchTerm) {
@@ -220,7 +238,7 @@ export default function MasterData() {
                         <h2 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
                             <Database className="w-6 h-6 text-slate-800" /> Data Master
                         </h2>
-                        <p className="text-slate-500 text-sm mt-1">Kelola referensi Dokter, Asuransi, dan Layanan</p>
+                        <p className="text-slate-500 text-sm mt-1">Kelola referensi Dokter, Asuransi, Layanan, dan Keperluan</p>
                     </div>
                 </div>
 
@@ -233,7 +251,8 @@ export default function MasterData() {
                             {[
                                 { id: 'doctors', label: 'Dokter', icon: Stethoscope, count: doctors.length },
                                 { id: 'insurances', label: 'Asuransi', icon: Shield, count: insurances.length },
-                                { id: 'services', label: 'Layanan', icon: Activity, count: services.length }
+                                { id: 'services', label: 'Layanan', icon: Activity, count: services.length },
+                                { id: 'purposes', label: 'Keperluan', icon: Target, count: requestPurposes.length }
                             ].map(tab => (
                                 <button
                                     key={tab.id}
@@ -279,7 +298,7 @@ export default function MasterData() {
                             className="w-full md:w-auto bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-all shadow-lg shadow-slate-900/20 hover:shadow-slate-900/40 active:scale-95"
                         >
                             <Plus size={18} />
-                            Tambah {activeTab === 'doctors' ? 'Dokter' : activeTab === 'insurances' ? 'Asuransi' : 'Layanan'}
+                            Tambah {activeTab === 'doctors' ? 'Dokter' : activeTab === 'insurances' ? 'Asuransi' : activeTab === 'services' ? 'Layanan' : 'Keperluan'}
                         </button>
                     </div>
                 </div>
@@ -326,7 +345,7 @@ export default function MasterData() {
                                                 onClick={() => handleSort('name')}
                                                 className="flex items-center gap-2 hover:text-blue-600 transition-colors font-semibold text-xs tracking-wide"
                                             >
-                                                <span>{activeTab === 'insurances' ? 'Nama Asuransi' : 'Nama Layanan'}</span>
+                                                <span>{activeTab === 'insurances' ? 'Nama Asuransi' : activeTab === 'services' ? 'Nama Layanan' : 'Nama Keperluan'}</span>
                                                 {sortConfig.key === 'name' ? (
                                                     sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
                                                 ) : (
@@ -438,7 +457,7 @@ export default function MasterData() {
                             <form onSubmit={handleSubmit} className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-1">
-                                        {activeTab === 'doctors' ? 'Nama Dokter' : (activeTab === 'insurances' ? 'Nama Asuransi' : 'Nama Layanan')}
+                                        {activeTab === 'doctors' ? 'Nama Dokter' : activeTab === 'insurances' ? 'Nama Asuransi' : activeTab === 'services' ? 'Nama Layanan' : 'Nama Keperluan'}
                                     </label>
                                     <input
                                         type="text"
@@ -446,7 +465,7 @@ export default function MasterData() {
                                         value={modalData.name}
                                         onChange={e => setModalData({ ...modalData, name: e.target.value })}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                                        placeholder={activeTab === 'doctors' ? 'Contoh: Dr. Budi Santoso' : (activeTab === 'insurances' ? 'Contoh: BPJS Kesehatan' : 'Contoh: Rawat Jalan')}
+                                        placeholder={activeTab === 'doctors' ? 'Contoh: Dr. Budi Santoso' : activeTab === 'insurances' ? 'Contoh: BPJS Kesehatan' : activeTab === 'services' ? 'Contoh: Rawat Jalan' : 'Contoh: Klaim Asuransi'}
                                     />
                                 </div>
 

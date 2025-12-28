@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Background rounded square -->
+  <rect x="4" y="4" width="56" height="56" rx="12" ry="12" fill="#2563eb"/>
+  <!-- Activity/Heartbeat icon - centered and scaled -->
+  <g transform="translate(14, 14) scale(1.5)">
+    <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" 
+          fill="none" 
+          stroke="white" 
+          stroke-width="2" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+  </g>
+</svg>

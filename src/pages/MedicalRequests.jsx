@@ -4,16 +4,37 @@ import Layout from '../components/Layout';
 import PrintPreview from '../components/PrintPreview';
 import ActivityLogger from '../utils/ActivityLogger';
 import { Plus, Search, Edit2, Trash2, X, FileText, Filter, Calendar, User, Clock, CheckCircle, ChevronRight, ChevronDown, Printer, Eye, AlertCircle, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Download, MessageCircle } from 'lucide-react';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo.svg';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const TYPES = ['Rawat Jalan (RJ)', 'Rawat Inap (RI)', 'Riwayat Berobat', 'Vaksin', 'Visum et Repertum', 'Lainnya'];
 const STATUSES = ['Pending', 'Proses', 'Selesai', 'Sudah Diambil', 'Ditolak'];
+const REQUEST_PURPOSES = ['Klaim', 'Masuk asuransi baru', 'Review polis', 'Dokumen pribadi', 'Second opinion'];
 
 const isElectron = () => window.api && window.api.requests;
 const isMasterElectron = () => window.api && window.api.master;
+
+// Helper: Format date as dd/mm/yyyy with leading zeros
+const formatDateDDMMYYYY = (dateStr) => {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '-';
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+};
+
+// Helper: Format doctor name (remove extra specialty name after code)
+// "Dr. Siti Aminah, Sp.A, Anak" -> "Dr. Siti Aminah, Sp.A"
+const formatDoctorName = (name) => {
+    if (!name) return '-';
+    const parts = name.split(',').map(p => p.trim());
+    // Keep only first 2 parts (name and specialist code)
+    return parts.slice(0, 2).join(', ').trim();
+};
 
 export default function MedicalRequests() {
     const [requests, setRequests] = useState([]);
@@ -73,19 +94,24 @@ export default function MedicalRequests() {
     const [doctors, setDoctors] = useState([]);
     const [insurances, setInsurances] = useState([]);
     const [services, setServices] = useState([]);
+    const [requestPurposes, setRequestPurposes] = useState([]);
 
     const loadMasterData = async () => {
         if (isMasterElectron()) {
             const d = await window.api.master.getDoctors();
             const i = await window.api.master.getInsurances();
             const s = await window.api.master.getServices();
+            const p = await window.api.master.getRequestPurposes();
             if (d) setDoctors(d);
             if (i) setInsurances(i);
             if (s) setServices(s);
+            if (p && p.length > 0) setRequestPurposes(p);
+            else setRequestPurposes(REQUEST_PURPOSES.map((name, i) => ({ id: i + 1, name })));
         } else {
             const savedDoc = localStorage.getItem('mpim_doctors');
             const savedIns = localStorage.getItem('mpim_insurances');
             const savedSvc = localStorage.getItem('mpim_services');
+            const savedPurposes = localStorage.getItem('mpim_request_purposes');
 
             if (savedDoc) setDoctors(JSON.parse(savedDoc));
             if (savedIns) setInsurances(JSON.parse(savedIns));
@@ -95,6 +121,13 @@ export default function MedicalRequests() {
             } else {
                 // Initial Default for Services if nothing saved yet
                 setServices(TYPES);
+            }
+
+            if (savedPurposes) {
+                setRequestPurposes(JSON.parse(savedPurposes));
+            } else {
+                // Initial Default for Request Purposes if nothing saved yet
+                setRequestPurposes(REQUEST_PURPOSES.map((name, i) => ({ id: i + 1, name })));
             }
 
             // Default fallbacks if empty (optional, or force user to add via master)
@@ -124,7 +157,8 @@ export default function MedicalRequests() {
         medRecordNumber: '', patientName: '', email: '', whatsapp: '',
         type: 'Rawat Jalan (RJ)', visitDateStart: '', visitDateEnd: '',
         insuranceName: 'BPJS Kesehatan', doctorName: '', status: 'Pending',
-        notes: '', applicantName: '', isPatientApplicant: true
+        notes: '', applicantName: '', isPatientApplicant: true,
+        requestPurpose: 'Klaim'
     });
 
     const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -248,10 +282,11 @@ export default function MedicalRequests() {
             'Email': req.email || '-',
             'WhatsApp': req.whatsapp || '-',
             'Jenis Layanan': req.serviceType || req.type || '-',
+            'Keperluan Permintaan': req.requestPurpose || '-',
             'Nama Asuransi': req.insuranceName || '-',
             'Nama Dokter': req.doctorName || '-',
-            'Tanggal Berobat (Mulai)': req.visitDateStart ? new Date(req.visitDateStart).toLocaleDateString('id-ID') : '-',
-            'Tanggal Berobat (Selesai)': req.visitDateEnd ? new Date(req.visitDateEnd).toLocaleDateString('id-ID') : '-',
+            'Tanggal Berobat (Mulai)': formatDateDDMMYYYY(req.visitDateStart),
+            'Tanggal Berobat (Selesai)': formatDateDDMMYYYY(req.visitDateEnd),
             'Tanggal Pengajuan': req.createdAt ? new Date(req.createdAt).toLocaleDateString('id-ID') : '-',
             'Status': req.status || '-',
             'Catatan/Keterangan': req.notes || '-',
@@ -325,15 +360,14 @@ export default function MedicalRequests() {
                 req.medRecordNumber || '-',
                 req.patientName || '-',
                 req.applicantName || '-',
-                req.email || '-',
-                req.whatsapp || '-',
                 req.serviceType || req.type || '-',
+                req.requestPurpose || '-',
                 req.insuranceName || '-',
                 req.doctorName || '-',
-                req.visitDateStart ? new Date(req.visitDateStart).toLocaleDateString('id-ID') : '-',
-                req.visitDateEnd ? new Date(req.visitDateEnd).toLocaleDateString('id-ID') : '-',
+                formatDateDDMMYYYY(req.visitDateStart),
+                formatDateDDMMYYYY(req.visitDateEnd),
                 req.status || '-',
-                (req.notes || '-').substring(0, 50) + (req.notes && req.notes.length > 50 ? '...' : '')
+                (req.notes || '-').substring(0, 30) + (req.notes && req.notes.length > 30 ? '...' : '')
             ]);
 
             // Generate table using autoTable
@@ -344,9 +378,8 @@ export default function MedicalRequests() {
                     'No. RM',
                     'Pasien',
                     'Pemohon',
-                    'Email',
-                    'WA',
                     'Layanan',
+                    'Keperluan',
                     'Asuransi',
                     'Dokter',
                     'Tgl Mulai',
@@ -415,7 +448,8 @@ export default function MedicalRequests() {
                 medRecordNumber: '', patientName: '', email: '', whatsapp: '',
                 type: 'Rawat Jalan (RJ)', visitDateStart: '', visitDateEnd: '',
                 insuranceName: '', doctorName: '', status: 'Pending',
-                notes: '', applicantName: '', isPatientApplicant: true
+                notes: '', applicantName: '', isPatientApplicant: true,
+                requestPurpose: 'Klaim'
             });
         }
         setIsModalOpen(true);
@@ -440,7 +474,9 @@ export default function MedicalRequests() {
 
     const handleSave = async (e) => {
         e.preventDefault();
-        const dataToSave = { ...formData, receiver: currentUser ? currentUser.name : 'Unknown' };
+        // Exclude createdAt from formData to prevent accidental updates
+        const { createdAt, ...cleanFormData } = formData;
+        const dataToSave = { ...cleanFormData, receiver: currentUser ? currentUser.name : 'Unknown' };
 
         if (currentReq) {
             // UPDATE
@@ -672,7 +708,9 @@ export default function MedicalRequests() {
                     <tr><td className="py-1 font-bold">Nama Pasien</td><td>: {printReq.patientName}</td></tr>
                     <tr><td className="py-1 font-bold">Jenis Permintaan</td><td>: {printReq.type}</td></tr>
                     <tr><td className="py-1 font-bold">Asuransi</td><td>: {printReq.insuranceName}</td></tr>
-                    <tr><td className="py-1 font-bold">Dokter Tujuan</td><td>: {printReq.doctorName}</td></tr>
+                    <tr><td className="py-1 font-bold">Dokter Tujuan</td><td>: {formatDoctorName(printReq.doctorName)}</td></tr>
+                    <tr><td className="py-1 font-bold">Tgl. Kunjungan</td><td>: {formatDateDDMMYYYY(printReq.visitDateStart)} - {formatDateDDMMYYYY(printReq.visitDateEnd)}</td></tr>
+                    <tr><td className="py-1 font-bold">Keperluan</td><td>: {printReq.requestPurpose || '-'}</td></tr>
                     {printReq.notes && (
                         <tr><td className="py-1 font-bold align-top">Catatan</td><td>: {printReq.notes}</td></tr>
                     )}
@@ -719,10 +757,10 @@ export default function MedicalRequests() {
             {/* Notes only for Patient Copy */}
             {showFooterNotes && (
                 <div className="w-full mt-8 pt-4 border-t border-slate-300 text-center text-xs text-slate-700 space-y-0.5">
-                    <p className="font-bold uppercase">Harap membawa tanda terima saat pengambilan dokumen.</p>
+                    <p className="font-bold uppercase">{settings?.printFooter?.reminder || 'HARAP MEMBAWA TANDA TERIMA SAAT PENGAMBILAN DOKUMEN.'}</p>
                     <p>Pengambilan dokumen hanya pada hari dan jam kerja:</p>
-                    <p className="font-semibold">Senin s.d Sabtu | Jam 08.00 s.d 16.00 WIB</p>
-                    <p className="pt-1 text-[10px] text-slate-500">Konfirmasi: 021 588 5120 (Telp/WA)</p>
+                    <p className="font-semibold">{settings?.printFooter?.workDays || 'Senin s.d Sabtu'} | Jam {settings?.printFooter?.workHours || '08.00 s.d 16.00 WIB'}</p>
+                    <p className="pt-1 text-[10px] text-slate-500">Konfirmasi: {settings?.printFooter?.contactInfo || '021 588 5120 (Telp/WA)'}</p>
                 </div>
             )}
 
@@ -907,7 +945,7 @@ export default function MedicalRequests() {
                                             onClick={() => handleSort('serviceType')}
                                             className="flex items-center gap-2 hover:text-blue-600 transition-colors font-semibold text-xs tracking-wide"
                                         >
-                                            <span>Jenis / Asuransi</span>
+                                            <span>Layanan / Keperluan</span>
                                             {sortConfig.key === 'serviceType' ? (
                                                 sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
                                             ) : (
@@ -967,10 +1005,11 @@ export default function MedicalRequests() {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="text-slate-900">{req.type}</div>
+                                                <div className="text-xs text-blue-600 font-medium">{req.requestPurpose || '-'}</div>
                                                 <div className="text-xs text-green-600 font-medium">{req.insuranceName}</div>
                                             </td>
                                             <td className="px-6 py-4 text-slate-600 text-center">
-                                                {new Date(req.visitDateStart).toLocaleDateString('id-ID')} - {new Date(req.visitDateEnd).toLocaleDateString('id-ID')}
+                                                {formatDateDDMMYYYY(req.visitDateStart)} - {formatDateDDMMYYYY(req.visitDateEnd)}
                                             </td>
                                             <td className="px-6 py-4 text-center">
                                                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold
@@ -1164,20 +1203,24 @@ export default function MedicalRequests() {
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-sm font-semibold text-slate-700 mb-1">Email <span className="text-red-500">*</span></label>
-                                                <input type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="nama@email.com" />
+                                                <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
+                                                <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="nama@email.com (opsional)" />
                                             </div>
                                             <div>
-                                                <label className="block text-sm font-semibold text-slate-700 mb-1">WhatsApp <span className="text-red-500">*</span></label>
+                                                <label className="block text-sm font-semibold text-slate-700 mb-1">WhatsApp</label>
                                                 <div className="flex rounded-lg border border-slate-300 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
                                                     <div className="bg-slate-100 text-slate-600 px-3 py-2 border-r border-slate-300 font-medium flex items-center text-sm">+62</div>
-                                                    <input type="text" required value={formData.whatsapp ? (formData.whatsapp.toString().startsWith('62') ? formData.whatsapp.toString().substring(2) : formData.whatsapp) : ''}
+                                                    <input
+                                                        type="text"
+                                                        value={formData.whatsapp ? (formData.whatsapp.toString().startsWith('62') ? formData.whatsapp.toString().substring(2) : formData.whatsapp) : ''}
                                                         onChange={e => {
                                                             let val = e.target.value.replace(/\D/g, '');
                                                             if (val.startsWith('0')) val = val.substring(1);
                                                             setFormData({ ...formData, whatsapp: '62' + val });
                                                         }}
-                                                        className="w-full px-3 py-2 outline-none placeholder:text-slate-300 text-slate-800" placeholder="812..." />
+                                                        className="w-full px-3 py-2 outline-none placeholder:text-slate-300 text-slate-800"
+                                                        placeholder="812... (opsional)"
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
@@ -1251,10 +1294,46 @@ export default function MedicalRequests() {
                                         <div>
                                             <label className="block text-sm font-semibold text-slate-700 mb-1">Tanggal Kunjungan / Rawat</label>
                                             <div className="flex items-center gap-2">
-                                                <input type="date" required value={formData.visitDateStart} onChange={e => setFormData({ ...formData, visitDateStart: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+                                                <input
+                                                    type="date"
+                                                    required
+                                                    value={formData.visitDateStart}
+                                                    onChange={e => setFormData({ ...formData, visitDateStart: e.target.value })}
+                                                    max={new Date().toISOString().split('T')[0]}
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                />
                                                 <span className="text-slate-400 font-medium">-</span>
-                                                <input type="date" required value={formData.visitDateEnd} onChange={e => setFormData({ ...formData, visitDateEnd: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+                                                <input
+                                                    type="date"
+                                                    required
+                                                    value={formData.visitDateEnd}
+                                                    onChange={e => setFormData({ ...formData, visitDateEnd: e.target.value })}
+                                                    min={formData.visitDateStart}
+                                                    max={new Date().toISOString().split('T')[0]}
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                />
                                             </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Keperluan Permintaan Data</label>
+                                            <select
+                                                required
+                                                value={formData.requestPurpose}
+                                                onChange={e => setFormData({ ...formData, requestPurpose: e.target.value })}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none bg-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                            >
+                                                {requestPurposes.length > 0 ? requestPurposes.map((p, idx) => {
+                                                    const val = typeof p === 'string' ? p : p.name;
+                                                    return <option key={idx} value={val}>{val}</option>;
+                                                }) : REQUEST_PURPOSES.map((p, idx) => (
+                                                    <option key={idx} value={p}>{p}</option>
+                                                ))}
+                                                {/* Fallback for legacy data */}
+                                                {(formData.requestPurpose && !requestPurposes.some(p => (typeof p === 'string' ? p : p.name) === formData.requestPurpose)) && (
+                                                    <option value={formData.requestPurpose}>{formData.requestPurpose}</option>
+                                                )}
+                                            </select>
                                         </div>
 
                                         <div>
@@ -1326,14 +1405,14 @@ export default function MedicalRequests() {
                                             <div><label className="text-xs text-slate-400 block">Jenis Permintaan</label><span className="font-medium text-slate-800">{detailReq.type}</span></div>
                                             <div><label className="text-xs text-slate-400 block">Asuransi</label><span className="font-medium text-slate-800">{detailReq.insuranceName}</span></div>
                                             <div><label className="text-xs text-slate-400 block">Dokter Tujuan</label><span className="font-medium text-slate-800">{detailReq.doctorName}</span></div>
-                                            <div><label className="text-xs text-slate-400 block">Tanggal Masuk</label><span className="font-medium text-slate-800">{new Date(detailReq.createdAt).toLocaleDateString()}</span></div>
+                                            <div><label className="text-xs text-slate-400 block">Tanggal Pengajuan</label><span className="font-medium text-slate-800">{formatDateDDMMYYYY(detailReq.createdAt)}</span></div>
                                         </div>
                                     </div>
                                     <div>
                                         <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 border-b pb-1">Kunjungan Berobat</h4>
                                         <div className="grid grid-cols-2 gap-y-4">
-                                            <div><label className="text-xs text-slate-400 block">Dari Tanggal</label><span className="font-medium text-slate-800">{detailReq.visitDateStart}</span></div>
-                                            <div><label className="text-xs text-slate-400 block">Sampai Tanggal</label><span className="font-medium text-slate-800">{detailReq.visitDateEnd}</span></div>
+                                            <div><label className="text-xs text-slate-400 block">Dari Tanggal</label><span className="font-medium text-slate-800">{formatDateDDMMYYYY(detailReq.visitDateStart)}</span></div>
+                                            <div><label className="text-xs text-slate-400 block">Sampai Tanggal</label><span className="font-medium text-slate-800">{formatDateDDMMYYYY(detailReq.visitDateEnd)}</span></div>
                                         </div>
                                     </div>
                                     {detailReq.notes && (<div className="bg-amber-50 p-3 rounded border border-amber-100 mt-2"><h4 className="text-sm font-semibold text-amber-800 mb-1">Catatan Tambahan</h4><p className="text-sm text-slate-700">{detailReq.notes}</p></div>)}

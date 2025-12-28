@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-
-import { BarChart3, Download, Calendar, TrendingUp, TrendingDown, AlertCircle, FileText, PieChart as PieIcon, Filter, Clock, CheckCircle, Activity, User, RotateCcw } from 'lucide-react';
+import { BarChart3, Download, Calendar, TrendingUp, TrendingDown, AlertCircle, FileText, PieChart as PieIcon, Filter, Clock, CheckCircle, Activity, User, RotateCcw, FileSpreadsheet } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { generateExecutiveReport } from '../utils/pdfGenerator';
+import { generateExecutiveReport, generateExcelReport } from '../utils/pdfGenerator';
 
 const isElectron = () => window.api && window.api.requests;
 
@@ -99,7 +98,6 @@ export default function Reports() {
     const dailyTrendData = Object.entries(dailyData)
         .map(([date, count]) => ({ date, count }))
         .sort((a, b) => {
-            // Simple sort by assuming dates are in format "DD MMM"
             return a.date.localeCompare(b.date);
         });
 
@@ -113,7 +111,6 @@ export default function Reports() {
     completedRequests.forEach(r => {
         if (r.createdAt) {
             const createdDate = new Date(r.createdAt);
-            // Get the latest completion date from history or use today as fallback
             let completionDate = new Date();
             if (r.history && r.history.length > 0) {
                 const lastHistory = r.history[r.history.length - 1];
@@ -143,7 +140,6 @@ export default function Reports() {
     processedOrCompleted.forEach(r => {
         if (r.createdAt && r.history && r.history.length > 0) {
             const createdDate = new Date(r.createdAt);
-            // Find first "Proses" status in history
             const firstProcess = r.history.find(h => h.status === 'Proses');
             if (firstProcess && firstProcess.date) {
                 const processDate = new Date(firstProcess.date);
@@ -159,7 +155,7 @@ export default function Reports() {
 
     const avgResponseTime = responseCount > 0 ? (totalResponseDays / responseCount).toFixed(1) : 0;
 
-    // 4. Active Cases (Pending + Proses)
+    // 4. Active Cases
     const activeCases = stats.pending + stats.proses;
 
     // Top Performance - Top Doctors
@@ -192,7 +188,7 @@ export default function Reports() {
             percentage: item.percentage
         }));
 
-    // Comparison Metrics - Calculate Previous Period
+    // Comparison Metrics
     const calculatePreviousPeriod = () => {
         const start = new Date(dateRange.start);
         const end = new Date(dateRange.end);
@@ -237,7 +233,7 @@ export default function Reports() {
         selesai: calculateTrend(stats.selesai, prevStats.selesai),
     };
 
-    // Export Executive Report PDF
+    // Handlers
     const handleExportExecutiveReport = async () => {
         try {
             await generateExecutiveReport({
@@ -249,7 +245,8 @@ export default function Reports() {
                 avgProcessingTime,
                 avgResponseTime,
                 topDoctors,
-                topInsurances
+                topInsurances,
+                statusChartData
             });
         } catch (error) {
             console.error('Error generating report:', error);
@@ -257,9 +254,13 @@ export default function Reports() {
         }
     };
 
+    const handleExportExcel = () => {
+        generateExcelReport(filteredData, dateRange);
+    };
+
     return (
         <Layout>
-            <div className="p-8">
+            <div className="p-8 pb-20">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div>
@@ -267,15 +268,25 @@ export default function Reports() {
                             <BarChart3 className="w-7 h-7 text-blue-600" />
                             Laporan & Analisis
                         </h2>
-                        <p className="text-slate-500 text-sm mt-1">Dashboard reporting</p>
+                        <p className="text-slate-500 text-sm mt-1">Dashboard reporting & export center</p>
                     </div>
-                    <button
-                        onClick={handleExportExecutiveReport}
-                        className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-semibold transition-all shadow-lg shadow-slate-900/20 hover:shadow-slate-900/40 active:scale-95"
-                    >
-                        <Download size={18} />
-                        Download Laporan Executive
-                    </button>
+
+                    <div className="flex flex-wrap gap-3">
+                        <button
+                            onClick={handleExportExcel}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-semibold transition-all shadow-lg shadow-emerald-900/20 hover:shadow-emerald-900/40 active:scale-95"
+                        >
+                            <FileSpreadsheet size={18} />
+                            Export Excel
+                        </button>
+                        <button
+                            onClick={handleExportExecutiveReport}
+                            className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-semibold transition-all shadow-lg shadow-slate-900/20 hover:shadow-slate-900/40 active:scale-95"
+                        >
+                            <Download size={18} />
+                            Laporan PDF
+                        </button>
+                    </div>
                 </div>
 
                 {/* Period Filter */}
@@ -320,7 +331,6 @@ export default function Reports() {
                             </button>
                         ))}
 
-                        {/* Reset Button */}
                         <button
                             onClick={() => {
                                 const today = new Date();
@@ -678,7 +688,6 @@ export default function Reports() {
                         <div className="space-y-0 divide-y divide-slate-50">
                             {topDoctors.map((doctor, index) => (
                                 <div key={index} className="flex items-center gap-4 py-4 group">
-                                    {/* Rank Badge - Cleaner */}
                                     <div className={`
                                         flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm
                                         ${doctor.rank === 1 ? 'bg-yellow-100 text-yellow-700' : ''}
@@ -688,8 +697,6 @@ export default function Reports() {
                                     `}>
                                         {doctor.rank}
                                     </div>
-
-                                    {/* Doctor Info */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-1">
                                             <p className="font-semibold text-slate-800 truncate">
@@ -699,7 +706,6 @@ export default function Reports() {
                                                 {doctor.count} <span className="text-slate-400 font-normal text-xs">kasus</span>
                                             </span>
                                         </div>
-                                        {/* Simple Progress Bar */}
                                         <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                                             <div
                                                 className={`h-full rounded-full ${index === 0 ? 'bg-blue-600' : 'bg-blue-400'}`}
@@ -727,7 +733,6 @@ export default function Reports() {
                         <div className="space-y-0 divide-y divide-slate-50">
                             {topInsurances.map((insurance, index) => (
                                 <div key={index} className="flex items-center gap-4 py-4 group">
-                                    {/* Rank Badge - Cleaner */}
                                     <div className={`
                                         flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm
                                         ${insurance.rank === 1 ? 'bg-yellow-100 text-yellow-700' : ''}
@@ -737,8 +742,6 @@ export default function Reports() {
                                     `}>
                                         {insurance.rank}
                                     </div>
-
-                                    {/* Insurance Info */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-1">
                                             <p className="font-semibold text-slate-800 truncate">
@@ -748,7 +751,6 @@ export default function Reports() {
                                                 {insurance.count} <span className="text-slate-400 font-normal text-xs">kasus</span>
                                             </span>
                                         </div>
-                                        {/* Simple Progress Bar */}
                                         <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                                             <div
                                                 className={`h-full rounded-full ${index === 0 ? 'bg-emerald-600' : 'bg-emerald-400'}`}
@@ -806,11 +808,6 @@ export default function Reports() {
                                     <td className="px-6 py-4 text-slate-700">Ditolak</td>
                                     <td className="px-6 py-4 text-center">{stats.ditolak}</td>
                                     <td className="px-6 py-4 text-center">{stats.total > 0 ? ((stats.ditolak / stats.total) * 100).toFixed(1) : 0}%</td>
-                                </tr>
-                                <tr className="hover:bg-slate-50 bg-red-50">
-                                    <td className="px-6 py-4 font-medium text-red-700">Kasus Alert (Butuh Perhatian)</td>
-                                    <td className="px-6 py-4 text-center font-bold text-red-600">{alerts}</td>
-                                    <td className="px-6 py-4 text-center text-red-600">{stats.total > 0 ? ((alerts / stats.total) * 100).toFixed(1) : 0}%</td>
                                 </tr>
                             </tbody>
                         </table>

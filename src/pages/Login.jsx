@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, Activity, ArrowRight, Shield, Zap, Users, Eye, EyeOff, User } from 'lucide-react';
 import ActivityLogger from '../utils/ActivityLogger';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo.svg';
 
 // Helper check
 const isElectron = () => window.api && window.api.auth;
@@ -13,7 +13,36 @@ export default function Login() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isCheckingSetup, setIsCheckingSetup] = useState(true);
     const navigate = useNavigate();
+
+    // Check if setup is complete
+    useEffect(() => {
+        const checkSetup = async () => {
+            try {
+                if (isElectron() && window.api.auth.checkSetup) {
+                    const result = await window.api.auth.checkSetup();
+                    if (!result.isSetupComplete) {
+                        navigate('/setup');
+                        return;
+                    }
+                } else {
+                    // Web mode - check localStorage
+                    const setupComplete = localStorage.getItem('mpim_setup_complete');
+                    const users = JSON.parse(localStorage.getItem('mpim_users') || '[]');
+                    if (!setupComplete && users.length === 0) {
+                        navigate('/setup');
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error('Check setup error:', err);
+            } finally {
+                setIsCheckingSetup(false);
+            }
+        };
+        checkSetup();
+    }, [navigate]);
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -38,23 +67,28 @@ export default function Login() {
                     setError(result.message);
                 }
             } else {
-                // Browser Fallback (Dev Mode)
-                const mockUser = {
-                    name: 'Admin Browser',
-                    email: email,
-                    role: 'Super Admin'
-                };
+                // Browser Fallback - Check against localStorage users
+                const users = JSON.parse(localStorage.getItem('mpim_users') || '[]');
+                const user = users.find(u =>
+                    (u.email?.toLowerCase() === email.toLowerCase() ||
+                        u.username?.toLowerCase() === email.toLowerCase()) &&
+                    u.password === password
+                );
+
                 if (!email || !password) {
                     setError('Mohon isi email dan password');
+                } else if (!user) {
+                    setError('Email/Username atau Password salah');
                 } else {
-                    localStorage.setItem('mpim_user', JSON.stringify(mockUser));
+                    const { password: _, ...userSafe } = user;
+                    localStorage.setItem('mpim_user', JSON.stringify(userSafe));
 
                     // Log activity
                     ActivityLogger.log('LOGIN', {
                         module: 'Authentication',
-                        description: `User ${mockUser.name} logged in successfully`,
-                        target: mockUser.email
-                    }, mockUser);
+                        description: `User ${user.name} logged in successfully`,
+                        target: user.email
+                    }, userSafe);
 
                     navigate('/dashboard');
                 }
@@ -66,6 +100,18 @@ export default function Login() {
             setIsLoading(false);
         }
     };
+
+    // Show loading while checking setup
+    if (isCheckingSetup) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-slate-400">Memuat...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4 font-sans text-slate-800 relative overflow-hidden">
@@ -85,7 +131,7 @@ export default function Login() {
                                 <Activity className="w-8 h-8 text-white" />
                             </div>
                             <div>
-                                <h1 className="text-3xl font-bold tracking-tight">MPIM System</h1>
+                                <h1 className="text-3xl font-bold tracking-tight">MPIM</h1>
                                 <p className="text-blue-200 text-sm">Medical Portal Information Management</p>
                             </div>
                         </div>
@@ -216,7 +262,7 @@ export default function Login() {
 
                     <div className="mt-8 text-center border-t border-slate-100 pt-6">
                         <p className="text-xs text-slate-400 font-medium">
-                            © 2025 MPIM System. Semua hak dilindungi.
+                            © 2025 MPIM | Medical Portal Information Management
                         </p>
                     </div>
                 </div>
@@ -228,8 +274,8 @@ export default function Login() {
                             <Activity className="w-7 h-7 text-white" />
                         </div>
                         <div className="text-left">
-                            <h1 className="text-2xl font-bold tracking-tight">MPIM System</h1>
-                            <p className="text-blue-200 text-xs">Medical Portal</p>
+                            <h1 className="text-2xl font-bold tracking-tight">MPIM</h1>
+                            <p className="text-blue-200 text-xs">Medical Portal Information Management</p>
                         </div>
                     </div>
                 </div>

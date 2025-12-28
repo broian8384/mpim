@@ -11,6 +11,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "lowdb": "^7.0.1",
@@ -41,5 +43,43 @@
     "tailwindcss": "^4.1.18",
     "vite": "^7.2.4",
     "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "com.mpim.app",
+    "productName": "MPIM System",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server.js",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "electron/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

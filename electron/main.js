@@ -6,6 +6,11 @@ import { setupAuthHandlers } from './ipc/auth.js';
 import { setupUserHandlers } from './ipc/users.js';
 import { setupRequestHandlers } from './ipc/requests.js';
 import { setupSettingsHandlers } from './ipc/settings.js';
+import { setupMasterHandlers } from './ipc/master.js';
+import { setupBackupHandlers, startAutoBackupScheduler } from './ipc/backup.js';
+import { setupHandoverHandlers } from './ipc/handover.js';
+import '../server.js'; // Start embedded web server
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -111,6 +116,8 @@ const createWindow = () => {
     const mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        title: 'MPIM | Medical Portal Information Management',
+        icon: path.join(__dirname, 'icon.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.cjs'),
             nodeIntegration: false,
@@ -129,12 +136,19 @@ app.whenReady().then(async () => {
     try {
         await initDB();
         createApplicationMenu(); // Create application menu
+        app.setName('Medical Portal Information Management');
 
         // Setup IPC Handlers
         setupAuthHandlers();
         setupUserHandlers();
         setupRequestHandlers();
         setupSettingsHandlers();
+        setupMasterHandlers();
+        setupBackupHandlers();
+        setupHandoverHandlers();
+
+        // Start auto-backup scheduler
+        startAutoBackupScheduler();
 
         createWindow();
 

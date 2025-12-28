@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, ChevronLeft, ChevronRight, FileText, Activity, Database, BarChart3, HardDrive, History, CircleHelp, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, ChevronLeft, ChevronRight, FileText, Activity, Database, BarChart3, HardDrive, History, CircleHelp, Settings, Key, X, Eye, EyeOff, Table, ClipboardList } from 'lucide-react';
 import ActivityLogger from '../utils/ActivityLogger';
 import AboutModal from './AboutModal';
 
@@ -9,6 +9,14 @@ export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
+
+  // Password Change Modal States
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
 
   React.useEffect(() => {
     const loadUser = async () => {
@@ -45,12 +53,136 @@ export default function Sidebar() {
     navigate('/');
   };
 
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    // Validation
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setPasswordError('Semua field harus diisi');
+      return;
+    }
+
+    if (passwordData.newPassword.length < 4) {
+      setPasswordError('Password baru minimal 4 karakter');
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError('Password baru dan konfirmasi tidak sama');
+      return;
+    }
+
+    setChangingPassword(true);
+
+    try {
+      if (window.api && window.api.auth && window.api.auth.changePassword) {
+        // Electron mode
+        const result = await window.api.auth.changePassword({
+          userId: currentUser.id,
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword
+        });
+
+        if (result.success) {
+          setPasswordSuccess('Password berhasil diubah!');
+          setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+
+          ActivityLogger.log('UPDATE', {
+            module: 'Authentication',
+            description: 'User changed their password',
+            target: currentUser.email
+          }, currentUser);
+
+          setTimeout(() => {
+            setShowPasswordModal(false);
+            setPasswordSuccess('');
+          }, 2000);
+        } else {
+          setPasswordError(result.message || 'Gagal mengubah password');
+        }
+      } else {
+        // Web mode - update localStorage
+        const users = JSON.parse(localStorage.getItem('mpim_users') || '[]');
+        const userIndex = users.findIndex(u => u.id === currentUser.id);
+
+        if (userIndex === -1) {
+          setPasswordError('User tidak ditemukan');
+        } else if (users[userIndex].password !== passwordData.currentPassword) {
+          setPasswordError('Password lama salah');
+        } else {
+          users[userIndex].password = passwordData.newPassword;
+          localStorage.setItem('mpim_users', JSON.stringify(users));
+          setPasswordSuccess('Password berhasil diubah!');
+          setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+
+          setTimeout(() => {
+            setShowPasswordModal(false);
+            setPasswordSuccess('');
+          }, 2000);
+        }
+      }
+    } catch (error) {
+      setPasswordError('Terjadi kesalahan: ' + error.message);
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  // NOTIFICATION BADGE COUNTS
+  const [counts, setCounts] = useState({ requests: 0, handover: 0 });
+
+  useEffect(() => {
+    // Initial fetch
+    fetchCounts();
+
+    // Polling interval (every 10 seconds for "live" feel)
+    const intervalId = setInterval(fetchCounts, 10000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const fetchCounts = async () => {
+    if (!window.api) return;
+    try {
+      // 1. Requests: Count with status 'Pending' or 'Proses'
+      if (window.api.requests) {
+        const reqs = await window.api.requests.getAll();
+        const pendingCount = reqs.filter(r => ['Pending', 'Proses'].includes(r.status)).length;
+        setCounts(prev => ({ ...prev, requests: pendingCount }));
+      }
+
+      // 2. Handover: Count active notes (isCompleted === false)
+      // Filter for current shift if needed, but 'active' globally is good for now
+      if (window.api.handover) {
+        const notes = await window.api.handover.list();
+        const activeCount = notes.filter(n => !n.isCompleted).length;
+        setCounts(prev => ({ ...prev, handover: activeCount }));
+      }
+    } catch (e) {
+      console.error("Failed to fetch notification counts:", e);
+    }
+  };
+
   const menuGroups = [
     {
       label: null, // No header for main group
       items: [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-        { icon: FileText, label: 'Permintaan Medis', path: '/requests' },
+        {
+          icon: FileText,
+          label: 'Permintaan Medis',
+          path: '/requests',
+          badge: counts.requests > 0 ? counts.requests : null,
+          badgeColor: 'bg-amber-500' // Custom color for requests
+        },
+        {
+          icon: ClipboardList,
+          label: 'Operan Dinas',
+          path: '/handover',
+          badge: counts.handover > 0 ? counts.handover : null,
+          badgeColor: 'bg-red-500' // Custom color for handover
+        },
         { icon: BarChart3, label: 'Laporan', path: '/reports' },
       ]
     },
@@ -69,6 +201,7 @@ export default function Sidebar() {
         items: [
           { icon: Settings, label: 'Pengaturan Instansi', path: '/settings' },
           { icon: HardDrive, label: 'Backup & Restore', path: '/backup' },
+          { icon: Table, label: 'Manajemen Database', path: '/database' },
         ]
       }
     ] : []),
@@ -81,9 +214,21 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside
-      className={`${isCollapsed ? 'w-20' : 'w-64'} bg-slate-900 h-screen sticky top-0 flex flex-col transition-all duration-300 z-20`}
-    >
+    <div className={`h-screen sticky top-0 flex flex-col bg-slate-900 text-white transition-all duration-300 ease-in-out border-r border-slate-700/50 z-30 flex-shrink-0 ${isCollapsed ? 'w-20' : 'w-64'
+      }`}>
+      {/* Sidebar Header Brand */}
+      <div className="flex items-center h-16 px-4 bg-slate-900 border-b border-slate-800">
+        <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-xl shadow-lg ring-2 ring-blue-500/20">
+          <Activity className="w-6 h-6 text-white" />
+        </div>
+        {!isCollapsed && (
+          <div className="ml-3 overflow-hidden animate-in fade-in duration-300">
+            <h1 className="text-lg font-bold tracking-tight text-white whitespace-nowrap">MPIM</h1>
+            <p className="text-xs text-slate-400 font-medium truncate">Medical Portal Information Management</p>
+          </div>
+        )}
+      </div>
+
       {/* Toggle Button */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -91,19 +236,6 @@ export default function Sidebar() {
       >
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
-
-      {/* Brand */}
-      <div className={`h-20 flex items-center ${isCollapsed ? 'justify-center' : 'px-6'} border-b border-slate-700/50 flex-shrink-0`}>
-        <div className={`p-2 bg-blue-600 rounded-lg text-white transition-all duration-300 ${isCollapsed ? '' : 'mr-3'}`}>
-          <Activity size={20} />
-        </div>
-        {!isCollapsed && (
-          <div className="overflow-hidden whitespace-nowrap">
-            <h1 className="font-bold text-lg tracking-wide text-white">MPIM</h1>
-            <p className="text-xs text-slate-400 font-medium truncate">Medical Portal Information Management</p>
-          </div>
-        )}
-      </div>
 
       {/* Navigation - Scrollable Area */}
       <nav className="flex-1 py-4 px-3 overflow-y-auto custom-scrollbar">
@@ -126,13 +258,13 @@ export default function Sidebar() {
                   key={item.path}
                   to={item.path}
                   className={({ isActive }) =>
-                    `flex items-center text-sm font-medium rounded-lg transition-all duration-200 
+                    `group relative flex items-center text-sm font-medium rounded-lg transition-all duration-200 
                     ${isCollapsed
                       ? 'justify-center w-10 h-10 mx-auto p-0'
                       : 'px-4 py-2.5'
                     }
                     ${isActive
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50'
                       : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                     }`
                   }
@@ -140,8 +272,26 @@ export default function Sidebar() {
                 >
                   {({ isActive }) => (
                     <>
-                      <item.icon className={`w-5 h-5 ${isCollapsed ? '' : 'mr-3'} ${isActive ? 'text-white' : ''}`} />
-                      {!isCollapsed && <span>{item.label}</span>}
+                      {/* Icon Container with Badge Dot (Collapsed) */}
+                      <div className="relative">
+                        <item.icon className={`w-5 h-5 ${isCollapsed ? '' : 'mr-3'} ${isActive ? 'text-white' : ''}`} />
+                        {/* Collapsed Badge Dot */}
+                        {isCollapsed && item.badge > 0 && (
+                          <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${item.badgeColor || 'bg-red-500'}`}></span>
+                        )}
+                      </div>
+
+                      {!isCollapsed && (
+                        <>
+                          <span className="flex-1">{item.label}</span>
+                          {/* Expanded Badge Pill */}
+                          {item.badge > 0 && (
+                            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm ${item.badgeColor || 'bg-red-500'}`}>
+                              {item.badge > 99 ? '99+' : item.badge}
+                            </span>
+                          )}
+                        </>
+                      )}
                     </>
                   )}
                 </NavLink>
@@ -168,21 +318,170 @@ export default function Sidebar() {
             )}
           </div>
 
-          {/* Logout Button */}
-          <button
-            onClick={handleLogout}
-            className={`
-              flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-lg p-2
-              ${isCollapsed ? 'w-10 h-10' : ''}
-            `}
-            title="Keluar / Logout"
-          >
-            <LogOut size={20} />
-          </button>
+          {/* Action Buttons */}
+          <div className={`flex ${isCollapsed ? 'flex-col' : 'flex-row'} gap-1`}>
+            {/* Change Password Button */}
+            <button
+              onClick={() => setShowPasswordModal(true)}
+              className={`
+                flex items-center justify-center text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all rounded-lg p-2
+                ${isCollapsed ? 'w-10 h-10' : ''}
+              `}
+              title="Ubah Password"
+            >
+              <Key size={18} />
+            </button>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className={`
+                flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-lg p-2
+                ${isCollapsed ? 'w-10 h-10' : ''}
+              `}
+              title="Keluar / Logout"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Key className="w-5 h-5 text-blue-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800">Ubah Password</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setPasswordError('');
+                  setPasswordSuccess('');
+                  setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              {/* Current Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Password Lama</label>
+                <div className="relative">
+                  <input
+                    type={showPasswords.current ? 'text' : 'password'}
+                    value={passwordData.currentPassword}
+                    onChange={e => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                    className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Masukkan password lama"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPasswords.current ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Password Baru</label>
+                <div className="relative">
+                  <input
+                    type={showPasswords.new ? 'text' : 'password'}
+                    value={passwordData.newPassword}
+                    onChange={e => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                    className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Masukkan password baru"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPasswords.new ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Konfirmasi Password Baru</label>
+                <div className="relative">
+                  <input
+                    type={showPasswords.confirm ? 'text' : 'password'}
+                    value={passwordData.confirmPassword}
+                    onChange={e => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                    className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Ulangi password baru"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPasswords.confirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Error Message */}
+              {passwordError && (
+                <div className="bg-red-50 text-red-600 text-sm px-4 py-2 rounded-lg border border-red-100">
+                  {passwordError}
+                </div>
+              )}
+
+              {/* Success Message */}
+              {passwordSuccess && (
+                <div className="bg-emerald-50 text-emerald-600 text-sm px-4 py-2 rounded-lg border border-emerald-100">
+                  {passwordSuccess}
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setPasswordError('');
+                    setPasswordSuccess('');
+                    setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                  }}
+                  className="flex-1 px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={changingPassword}
+                  className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {changingPassword ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    'Ubah Password'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
-    </aside>
+    </div>
   );
 }
 

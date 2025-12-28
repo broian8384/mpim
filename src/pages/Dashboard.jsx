@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { Users, FileText, Activity, Clock, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
+import { Users, FileText, Activity, Clock, CheckCircle, AlertCircle, ChevronRight, TrendingUp, Calendar, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import {
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
+    BarChart, Bar, Cell, PieChart, Pie
+} from 'recharts';
 
 const isElectron = () => window.api && window.api.requests;
 
 export default function Dashboard() {
     const navigate = useNavigate();
-    const [stats, setStats] = useState([
-        { label: 'Total Permintaan', value: 0, icon: FileText, style: { bg: 'bg-blue-100', text: 'text-blue-600' } },
-        { label: 'Pending', value: 0, icon: Clock, style: { bg: 'bg-slate-100', text: 'text-slate-600' } },
-        { label: 'Proses', value: 0, icon: Activity, style: { bg: 'bg-amber-100', text: 'text-amber-600' } },
-        { label: 'Selesai', value: 0, icon: CheckCircle, style: { bg: 'bg-emerald-100', text: 'text-emerald-600' } },
-    ]);
+    const [stats, setStats] = useState({ total: 0, pending: 0, process: 0, done: 0 });
     const [recentActivity, setRecentActivity] = useState([]);
     const [alerts, setAlerts] = useState([]);
+
+    // Chart Data States
+    const [trendData, setTrendData] = useState([]);
+    const [insuranceData, setInsuranceData] = useState([]);
 
     // Initial Load
     useEffect(() => {
@@ -30,25 +33,47 @@ export default function Dashboard() {
                 reqs = saved ? JSON.parse(saved) : [];
             }
 
-            // Calculate Stats
+            // 1. Calculate Core Stats
             const total = reqs.length;
             const process = reqs.filter(r => r.status === 'Proses').length;
             const done = reqs.filter(r => r.status === 'Selesai').length;
             const pending = reqs.filter(r => r.status === 'Pending').length;
 
-            setStats([
-                { label: 'Total Permintaan', value: total, icon: FileText, style: { bg: 'bg-blue-100', text: 'text-blue-600' } },
-                { label: 'Pending', value: pending, icon: Clock, style: { bg: 'bg-slate-100', text: 'text-slate-600' } },
-                { label: 'Proses', value: process, icon: Activity, style: { bg: 'bg-amber-100', text: 'text-amber-600' } },
-                { label: 'Selesai', value: done, icon: CheckCircle, style: { bg: 'bg-emerald-100', text: 'text-emerald-600' } },
-            ]);
+            setStats({ total, pending, process, done });
 
-            // Calculate Alerts
+            // 2. Process Trend Data (Last 7 Days)
+            const last7Days = [...Array(7)].map((_, i) => {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                return d.toISOString().split('T')[0];
+            }).reverse();
+
+            const trend = last7Days.map(date => {
+                const count = reqs.filter(r => r.createdAt.startsWith(date)).length;
+                return {
+                    date: new Date(date).toLocaleDateString('id-ID', { weekday: 'short' }),
+                    fullDate: date,
+                    value: count
+                };
+            });
+            setTrendData(trend);
+
+            // 3. Process Insurance Distribution & Poli
+            const insuranceCounts = reqs.reduce((acc, curr) => {
+                const polite = curr.type?.split(' - ')[0] || 'Lainnya'; // Simple grouping
+                acc[polite] = (acc[polite] || 0) + 1;
+                return acc;
+            }, {});
+
+            const insChartData = Object.entries(insuranceCounts).map(([name, value]) => ({ name, value }));
+            setInsuranceData(insChartData);
+
+
+            // 4. Calculate Alerts
             const alertItems = [];
             const today = new Date();
 
             reqs.forEach(r => {
-                // 1. Time Alert (Pending/Proses > 3 days)
                 if (['Pending', 'Proses'].includes(r.status)) {
                     const created = new Date(r.createdAt);
                     const diffTime = Math.abs(today - created);
@@ -57,24 +82,9 @@ export default function Dashboard() {
                     if (diffDays >= 3) {
                         alertItems.push({
                             id: `time-${r.id}`,
-                            reqId: r.id, // Important for navigation
+                            reqId: r.id,
                             type: 'time',
                             text: `Permintaan ${r.patientName} (${r.status}) sudah ${diffDays} hari belum selesai.`,
-                            priority: 'high'
-                        });
-                    }
-                }
-
-                // 2. Frequency/History Alert (Stuck)
-                if (r.status === 'Proses') {
-                    // Check history length
-                    const historyCount = r.history ? r.history.length : 0;
-                    if (historyCount >= 3) { // Threshold 3 updates
-                        alertItems.push({
-                            id: `history-${r.id}`,
-                            reqId: r.id,
-                            type: 'freq',
-                            text: `Pengajuan ${r.patientName} sudah ${historyCount}x update progres (Macet).`,
                             priority: 'high'
                         });
                     }
@@ -88,131 +98,248 @@ export default function Dashboard() {
         loadInitialData();
     }, []);
 
+    const metricCards = [
+        { label: 'Total Permintaan', value: stats.total, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', trend: '+12%' },
+        { label: 'Pending (Menunggu)', value: stats.pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100', trend: 'Perlu Tindakan' },
+        { label: 'Sedang Proses', value: stats.process, icon: Activity, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-100', trend: 'Aktif' },
+        { label: 'Selesai', value: stats.done, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', trend: 'Completed' },
+    ];
+
     return (
         <Layout>
-            <div className="p-8">
-                <header className="mb-8 flex justify-between items-center">
+            <div className="p-8 pb-20 space-y-8">
+                {/* Header */}
+                <header className="flex justify-between items-end">
                     <div>
-                        <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
-                        <p className="text-slate-500 text-sm mt-1">Ringkasan aktivitas sistem</p>
+                        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <Activity className="w-6 h-6 text-blue-600" />
+                            Executive Dashboard
+                        </h2>
+                        <p className="text-slate-500 text-sm mt-1">Ringkasan performa & aktivitas unit rekam medis.</p>
                     </div>
-                    {/* Date Widget? */}
-                    <div className="text-sm text-slate-500 bg-white px-3 py-1 rounded-lg border border-slate-200">
-                        {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    <div className="text-right hidden sm:block">
+                        <p className="text-sm font-bold text-slate-700">{new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        <p className="text-xs text-slate-400">Update Realtime</p>
                     </div>
                 </header>
 
-                {/* Modern Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    {stats.map((stat, index) => (
-                        <div key={index} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group relative overflow-hidden">
-                            {/* Accent Strip */}
-                            <div className={`absolute right-0 top-0 h-full w-1 ${stat.style.bg.replace('bg-', 'bg-').replace('-100', '-500')}`}></div>
-
-                            <div className="flex items-center justify-between mb-4">
-                                <div className={`p-3.5 rounded-xl ${stat.style.bg} ${stat.style.text} group-hover:scale-110 transition-transform`}>
-                                    <stat.icon className="w-6 h-6" />
+                {/* Metric Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    {metricCards.map((card, idx) => (
+                        <div key={idx} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-sm border ${card.border} group hover:shadow-md transition-all`}>
+                            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity`}>
+                                <card.icon className={`w-24 h-24 ${card.color}`} />
+                            </div>
+                            <div className="relative z-10">
+                                <div className={`w-12 h-12 rounded-xl ${card.bg} flex items-center justify-center mb-4`}>
+                                    <card.icon className={`w-6 h-6 ${card.color}`} />
                                 </div>
-                                <div className={`text-xs font-bold px-2 py-1 rounded-full ${stat.style.bg} ${stat.style.text}`}>
-                                    {stat.label === 'Total Permintaan' ? 'Total' : stat.label}
+                                <h3 className="text-slate-500 text-sm font-medium mb-1">{card.label}</h3>
+                                <div className="flex items-end gap-2">
+                                    <span className="text-3xl font-bold text-slate-800">{card.value}</span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full mb-1.5 ${card.label.includes('Pending') ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        {card.trend}
+                                    </span>
                                 </div>
                             </div>
-                            <h3 className="text-4xl font-bold text-slate-800 mb-1 tracking-tight">{stat.value}</h3>
-                            <p className="text-slate-400 text-sm font-medium">{stat.label}</p>
                         </div>
                     ))}
                 </div>
 
-                {/* Modern Alerts Section */}
-                {alerts.length > 0 && (
-                    <div className="bg-white border border-red-100 rounded-xl shadow-sm p-6 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-start gap-4">
-                            <div className="p-3 bg-red-50 text-red-600 rounded-lg">
-                                <AlertCircle className="w-6 h-6" />
-                            </div>
+                {/* CHARTS SECTION */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Left: Trend Chart (Area) */}
+                    <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <div className="flex justify-between items-center mb-6">
                             <div>
-                                <h3 className="text-lg font-bold text-slate-800">Perhatian Diperlukan</h3>
-                                <p className="text-slate-500 text-sm mt-1">Terdeteksi <span className="font-bold text-red-600">{alerts.length} pengajuan</span> yang membutuhkan tindak lanjut segera.</p>
+                                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                    <TrendingUp className="w-5 h-5 text-blue-500" />
+                                    Tren Permintaan (7 Hari Terakhir)
+                                </h3>
                             </div>
                         </div>
-                        <button
-                            onClick={() => navigate('/requests', { state: { filterAlerts: true } })}
-                            className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap flex items-center gap-2"
-                        >
-                            Lihat Semua Kasus ({alerts.length})
-                            <ChevronRight className="w-4 h-4 text-white/70" />
-                        </button>
-                    </div>
-                )}
-
-                {/* Recent Activity Section */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-                    <div className="flex justify-between items-center mb-6">
-                        <div>
-                            <h3 className="text-xl font-bold text-slate-800">Permintaan Terbaru</h3>
-                            <p className="text-sm text-slate-400 mt-0.5">5 aktivitas terakhir masuk</p>
+                        <div className="h-[280px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={trendData}>
+                                    <defs>
+                                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+                                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis
+                                        dataKey="date"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#64748b', fontSize: 12 }}
+                                        dy={10}
+                                    />
+                                    <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#64748b', fontSize: 12 }}
+                                    />
+                                    <RechartsTooltip
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                        cursor={{ stroke: '#3b82f6', strokeWidth: 2 }}
+                                    />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="value"
+                                        stroke="#3b82f6"
+                                        strokeWidth={3}
+                                        fillOpacity={1}
+                                        fill="url(#colorValue)"
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
                         </div>
-                        <button onClick={() => navigate('/requests')} className="text-sm bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-slate-100 hover:text-blue-600 transition-colors">
-                            Lihat Semua
-                        </button>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 text-slate-700 uppercase text-xs font-semibold tracking-wide">
-                                <tr>
-                                    <th className="px-6 py-4 rounded-tl-xl border-b border-slate-100">Pasien</th>
-                                    <th className="px-6 py-4 border-b border-slate-100">Layanan & Penjamin</th>
-                                    <th className="px-6 py-4 border-b border-slate-100">Tanggal</th>
-                                    <th className="px-6 py-4 border-b border-slate-100 text-right rounded-tr-xl">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {recentActivity.length === 0 ? (
+                    {/* Right: Poli Distribution (Bar) */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold text-lg text-slate-800 mb-6">Distribusi Layanan</h3>
+                        <div className="h-[280px] w-full">
+                            {insuranceData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={insuranceData} margin={{ left: 40 }}>
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                                        <XAxis type="number" hide />
+                                        <YAxis
+                                            dataKey="name"
+                                            type="category"
+                                            axisLine={false}
+                                            tickLine={false}
+                                            width={100}
+                                            tick={{ fill: '#475569', fontSize: 11, fontWeight: 500 }}
+                                        />
+                                        <RechartsTooltip
+                                            cursor={{ fill: '#f8fafc' }}
+                                            contentStyle={{ borderRadius: '8px' }}
+                                        />
+                                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                                            {insuranceData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b'][index % 4]} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                    <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
+                                    <p className="text-xs">Belum ada data visual</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* GRID BOTTOM SECTION */}
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+
+                    {/* Recent Activity Table */}
+                    <div className="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                            <h3 className="font-bold text-lg text-slate-800">Aktivitas Terkini</h3>
+                            <button onClick={() => navigate('/requests')} className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 group">
+                                LIHAT SEMUA <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                            </button>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
                                     <tr>
-                                        <td colSpan="4" className="px-6 py-12 text-center text-slate-400 italic bg-slate-50/20 rounded-b-xl">
-                                            Belum ada aktivitas terbaru hari ini.
-                                        </td>
+                                        <th className="px-6 py-3">Pasien</th>
+                                        <th className="px-6 py-3">Waktu</th>
+                                        <th className="px-6 py-3 text-right">Status</th>
                                     </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {recentActivity.length === 0 ? (
+                                        <tr><td colSpan="3" className="p-8 text-center text-slate-400 text-xs">Belum ada data.</td></tr>
+                                    ) : (
+                                        recentActivity.map((req) => (
+                                            <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${req.type?.includes('IGD') ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                                                            }`}>
+                                                            {req.patientName.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold text-slate-700 text-xs">{req.patientName}</p>
+                                                            <p className="text-[10px] text-slate-400 font-mono">{req.regNumber}</p>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                                        <Clock size={12} />
+                                                        {new Date(req.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                                        <span className="text-[10px] text-slate-300">•</span>
+                                                        <span>{new Date(req.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${req.status === 'Selesai' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                            req.status === 'Proses' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
+                                                                req.status === 'Pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                                                    'bg-slate-50 text-slate-500 border-slate-100'
+                                                        }`}>
+                                                        {req.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Alerts Panel */}
+                    <div className="xl:col-span-1 space-y-4">
+                        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-10"><AlertCircle size={80} /></div>
+                            <h3 className="font-bold text-lg mb-1 relative z-10">Pusat Notifikasi</h3>
+                            <p className="text-slate-400 text-xs mb-4 relative z-10">Item yang memerlukan perhatian segera.</p>
+
+                            <div className="space-y-3 relative z-10 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar-dark">
+                                {alerts.length === 0 ? (
+                                    <div className="p-4 bg-white/5 rounded-xl border border-white/10 text-center">
+                                        <CheckCircle className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+                                        <p className="text-xs text-slate-300">Semua aman terkendali!</p>
+                                    </div>
                                 ) : (
-                                    recentActivity.map((req) => (
-                                        <tr key={req.id} className="hover:bg-slate-50/80 transition-colors group cursor-default">
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0 ring-1 ring-blue-100/50">
-                                                        {req.patientName.charAt(0)}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-semibold text-slate-800 text-sm">{req.patientName}</p>
-                                                        <p className="text-[11px] text-slate-500 font-mono">{req.regNumber || '-'}</p>
-                                                    </div>
+                                    alerts.map((alert) => (
+                                        <div key={alert.id} onClick={() => navigate('/requests')} className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl hover:bg-red-500/20 transition-colors cursor-pointer group">
+                                            <div className="flex gap-3">
+                                                <div className="mt-0.5 shrink-0 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+                                                <div>
+                                                    <p className="text-xs font-medium text-red-200 leading-relaxed group-hover:text-white transition-colors">
+                                                        {alert.text}
+                                                    </p>
+                                                    <span className="text-[10px] text-red-400/70 mt-1 block uppercase tracking-wider font-bold">Prioritas Tinggi</span>
                                                 </div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <p className="text-slate-700 text-xs font-medium">{req.type}</p>
-                                                <p className="text-[11px] text-slate-400">{req.insuranceName}</p>
-                                            </td>
-                                            <td className="px-4 py-3 text-slate-500 text-xs">
-                                                {new Date(req.createdAt || Date.now()).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                                                <span className="text-[10px] ml-1 text-slate-400 block">{new Date(req.createdAt || Date.now()).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${req.status === 'Selesai' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                                                    req.status === 'Proses' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' :
-                                                        req.status === 'Ditolak' ? 'bg-red-50 text-red-600 border-red-200' :
-                                                            'bg-amber-50 text-amber-600 border-amber-200'
-                                                    }`}>
-                                                    {req.status}
-                                                </span>
-                                            </td>
-                                        </tr>
+                                            </div>
+                                        </div>
                                     ))
                                 )}
-                            </tbody>
-                        </table>
+                            </div>
+                        </div>
+
+                        {/* Quick Action Mini Card */}
+                        <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-lg shadow-blue-200 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]">
+                            <h3 className="font-bold text-lg mb-2">Buat Permintaan Baru?</h3>
+                            <p className="text-blue-100 text-xs mb-4 opacity-90">Input data pasien rawat inap atau jalan dengan cepat.</p>
+                            <button onClick={() => navigate('/requests')} className="w-full py-2.5 bg-white text-blue-600 font-bold text-xs rounded-xl hover:bg-blue-50 transition-colors shadow-sm">
+                                + Input Request
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
-        </Layout >
+        </Layout>
     );
 }

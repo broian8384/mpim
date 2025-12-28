@@ -1,7 +1,32 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import ActivityLogger from './ActivityLogger';
 
+// Helper to get institution profile
+const getInstitutionProfile = () => {
+    try {
+        const saved = localStorage.getItem('mpim_instansi_profile');
+        return saved ? JSON.parse(saved) : {
+            name: 'RUMAH SAKIT UMUM DAERAH',
+            address: 'Jl. Kesehatan No. 1, Kota Sehat, Indonesia',
+            phone: '(021) 12345678',
+            email: 'info@rsud.com',
+            website: 'www.rsud.com'
+        };
+    } catch (e) {
+        return {
+            name: 'RUMAH SAKIT UMUM DAERAH',
+            address: 'Jl. Kesehatan No. 1',
+            phone: '-',
+            email: '-'
+        };
+    }
+};
+
+/**
+ * Generate Executive PDF Report
+ */
 export const generateExecutiveReport = (data) => {
     const {
         stats,
@@ -13,224 +38,236 @@ export const generateExecutiveReport = (data) => {
         avgResponseTime,
         topDoctors,
         topInsurances,
-        processedCount // optional, but good for details if needed
+        statusChartData
     } = data;
+
+    const profile = getInstitutionProfile();
 
     try {
         const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.width;
 
-        // Cover Page
-        doc.setFontSize(24);
+        // === KOP SURAT (HEADER) ===
+        doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
-        doc.text('LAPORAN EKSEKUTIF', 105, 50, { align: 'center' });
+        doc.text(profile.name.toUpperCase(), pageWidth / 2, 20, { align: 'center' });
 
-        doc.setFontSize(18);
-        doc.text('Penerimaan Informasi Medis', 105, 65, { align: 'center' });
-
-        // Period
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'normal');
-        const startDate = new Date(dateRange.start).toLocaleDateString('id-ID');
-        const endDate = new Date(dateRange.end).toLocaleDateString('id-ID');
-        doc.text(`Periode: ${startDate} - ${endDate}`, 105, 80, { align: 'center' });
-
-        // Generated date
         doc.setFontSize(10);
-        doc.text(`Dicetak: ${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID')}`, 105, 90, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.text(profile.address, pageWidth / 2, 26, { align: 'center' });
+        doc.text(`Telp: ${profile.phone} | Email: ${profile.email}`, pageWidth / 2, 31, { align: 'center' });
 
-        // Summary Box
-        doc.setFillColor(51, 65, 85);
-        doc.rect(20, 110, 170, 60, 'F');
+        // Garis Kop Surat
+        doc.setLineWidth(1);
+        doc.line(20, 36, pageWidth - 20, 36);
+        doc.setLineWidth(0.5);
+        doc.line(20, 37, pageWidth - 20, 37);
 
-        doc.setTextColor(255, 255, 255);
+        // === JUDUL LAPORAN ===
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
-        doc.text('RINGKASAN EKSEKUTIF', 105, 125, { align: 'center' });
+        doc.text('LAPORAN EKSEKUTIF PELAYANAN INFORMASI MEDIS', pageWidth / 2, 50, { align: 'center' });
 
         doc.setFontSize(11);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Total Pengajuan: ${stats.total}`, 30, 140);
-        doc.text(`Selesai: ${stats.selesai} (${completionRate}%)`, 30, 150);
-        doc.text(`Dalam Proses: ${stats.proses}`, 30, 160);
+        const startDate = new Date(dateRange.start).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const endDate = new Date(dateRange.end).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        doc.text(`Periode Laporan: ${startDate} s/d ${endDate}`, pageWidth / 2, 58, { align: 'center' });
 
-        doc.text(`Kasus Alert: ${alerts}`, 120, 140);
-        doc.text(`Pending: ${stats.pending}`, 120, 150);
-        doc.text(`Avg Processing: ${avgProcessingTime} hari`, 120, 160);
+        // === RINGKASAN DATA (DETAIL UTAMA) ===
+        const summaryY = 70;
 
-        // === PAGE 2: ANALISIS & INSIGHT ===
+        // Kotak Ringkasan
+        doc.setDrawColor(200, 200, 200);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(20, summaryY, pageWidth - 40, 45, 3, 3, 'FD');
+
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text('RINGKASAN KINERJA', 30, summaryY + 10);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+
+        // Col 1
+        doc.text('Total Permintaan', 30, summaryY + 20);
+        doc.text(`: ${stats.total} Berkas`, 80, summaryY + 20);
+
+        doc.text('Selesai Diproses', 30, summaryY + 28);
+        doc.text(`: ${stats.selesai} (${completionRate}%)`, 80, summaryY + 28);
+
+        doc.text('Sedang Berjalan', 30, summaryY + 36);
+        doc.text(`: ${stats.proses + stats.pending} Berkas`, 80, summaryY + 36);
+
+        // Col 2
+        const col2X = 110;
+        doc.text('Rata-rata Waktu Proses', col2X, summaryY + 20);
+        doc.text(`: ${avgProcessingTime} Hari`, col2X + 50, summaryY + 20);
+
+        doc.text('Kasus Alert / Prioritas', col2X, summaryY + 28);
+        doc.text(`: ${alerts} Kasus`, col2X + 50, summaryY + 28);
+
+        doc.text('Trend Volume', col2X, summaryY + 36);
+        const trendSymbol = trends.total.isUp ? '(Naik)' : '(Turun)';
+        doc.text(`: ${trends.total.value}% ${trendSymbol}`, col2X + 50, summaryY + 36);
+
+        // === TABEL STATUS ===
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('A. Rincian Status Permintaan', 20, 130);
+
+        const tableBody = [
+            ['Status', 'Jumlah', 'Persentase', 'Keterangan Trend'],
+            ['Pending (Menunggu)', stats.pending, ((stats.pending / stats.total) * 100 || 0).toFixed(1) + '%', `${trends.pending.isUp ? 'Naik' : 'Turun'} ${trends.pending.value}%`],
+            ['Sedang Proses', stats.proses, ((stats.proses / stats.total) * 100 || 0).toFixed(1) + '%', `${trends.proses.isUp ? 'Naik' : 'Turun'} ${trends.proses.value}%`],
+            ['Selesai', stats.selesai, ((stats.selesai / stats.total) * 100 || 0).toFixed(1) + '%', `${trends.selesai.isUp ? 'Naik' : 'Turun'} ${trends.selesai.value}%`],
+            ['Sudah Diambil', stats.diambil, ((stats.diambil / stats.total) * 100 || 0).toFixed(1) + '%', '-'],
+            ['Ditolak', stats.ditolak, ((stats.ditolak / stats.total) * 100 || 0).toFixed(1) + '%', '-'],
+        ];
+
+        autoTable(doc, {
+            startY: 135,
+            head: [tableBody[0]],
+            body: tableBody.slice(1),
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+            styles: { fontSize: 9, cellPadding: 3 },
+            columnStyles: {
+                0: { cellWidth: 50 },
+                1: { cellWidth: 30, halign: 'center' },
+                2: { cellWidth: 30, halign: 'center' },
+                3: { cellWidth: 'auto' }
+            }
+        });
+
+        // === TABEL ASURANSI TOP 5 ===
+        const finalYFromStatus = doc.lastAutoTable.finalY + 15;
+        doc.setFontSize(12);
+        doc.text('B. Distribusi Asuransi/Jaminan (Top 5)', 20, finalYFromStatus);
+
+        const insuranceBody = topInsurances.slice(0, 5).map((ins, idx) => [
+            (idx + 1).toString(),
+            ins.name,
+            ins.count.toString(),
+            `${ins.percentage}%`
+        ]);
+
+        autoTable(doc, {
+            startY: finalYFromStatus + 5,
+            head: [['No', 'Nama Penjamin', 'Jumlah Kasus', 'Persentase']],
+            body: insuranceBody,
+            theme: 'striped',
+            headStyles: { fillColor: [52, 73, 94] },
+            styles: { fontSize: 9 }
+        });
+
+        // === HALAMAN BARU: ANALISIS & REKOMENDASI ===
         doc.addPage();
-        doc.setTextColor(0, 0, 0);
 
-        // Executive Summary dengan Analisis
-        doc.setFontSize(16);
+        doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text('1. EXECUTIVE SUMMARY', 14, 20);
+        doc.text('C. Analisis & Rekomendasi Strategis', 20, 20);
 
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
-        let yPos = 30;
 
-        // Generate smart analysis
-        const completionText = completionRate >= 70 ? 'BAIK' : completionRate >= 50 ? 'CUKUP' : 'PERLU PENINGKATAN';
-        const trendText = trends.total.isUp ? 'MENINGKAT' : 'MENURUN';
-        const alertText = alerts > stats.total * 0.2 ? 'TINGGI dan memerlukan perhatian segera' : alerts > 0 ? 'MODERAT' : 'RENDAH';
-
-        doc.text(`Dalam periode ${startDate} - ${endDate}, terdapat ${stats.total} pengajuan`, 14, yPos);
-        yPos += 7;
-        doc.text(`informasi medis. Tingkat penyelesaian ${completionRate}% dikategorikan ${completionText}.`, 14, yPos);
-        yPos += 7;
-        doc.text(`Volume pengajuan ${trendText} ${trends.total.value}% dibanding periode sebelumnya.`, 14, yPos);
-        yPos += 7;
-        doc.text(`Tingkat alert ${alertText} dengan ${alerts} kasus (${((alerts / stats.total) * 100).toFixed(1)}%).`, 14, yPos);
-
-        yPos += 15;
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.text('2. KEY INSIGHTS', 14, yPos);
-
-        yPos += 10;
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-
-        // Insight 1: Performance
-        doc.setFont('helvetica', 'bold');
-        doc.text('a) Kinerja Operasional:', 14, yPos);
-        doc.setFont('helvetica', 'normal');
-        yPos += 7;
-        doc.text(`   - Waktu proses rata-rata: ${avgProcessingTime} hari`, 14, yPos);
-        yPos += 6;
-        doc.text(`   - Waktu respon: ${avgResponseTime} hari`, 14, yPos);
-        yPos += 6;
-        const perfText = avgProcessingTime <= 3 ? 'Sangat Efisien' : avgProcessingTime <= 7 ? 'Efisien' : 'Perlu Optimasi';
-        doc.text(`   - Evaluasi: ${perfText}`, 14, yPos);
-
-        yPos += 10;
-        // Insight 2: Top Performers
-        doc.setFont('helvetica', 'bold');
-        doc.text('b) Kontributor Utama:', 14, yPos);
-        doc.setFont('helvetica', 'normal');
-        yPos += 7;
-        if (topDoctors.length > 0) {
-            doc.text(`   - Dokter Terbanyak: ${topDoctors[0].name} (${topDoctors[0].count} kasus)`, 14, yPos);
-            yPos += 6;
-        }
-        if (topInsurances.length > 0) {
-            doc.text(`   - Asuransi Dominan: ${topInsurances[0].name} (${topInsurances[0].percentage}%)`, 14, yPos);
-            yPos += 6;
-        }
-
-        yPos += 10;
-        // Insight 3: Trend Analysis
-        doc.setFont('helvetica', 'bold');
-        doc.text('c) Analisis Trend:', 14, yPos);
-        doc.setFont('helvetica', 'normal');
-        yPos += 7;
-        doc.text(`   - Total pengajuan: ${trends.total.isUp ? 'Naik' : 'Turun'} ${trends.total.value}%`, 14, yPos);
-        yPos += 6;
-        doc.text(`   - Kasus selesai: ${trends.selesai.isUp ? 'Naik' : 'Turun'} ${trends.selesai.value}%`, 14, yPos);
-        yPos += 6;
-        const trendEval = trends.total.isUp && trends.selesai.isUp ? 'Positif - Produktivitas meningkat' :
-            trends.total.isUp && !trends.selesai.isUp ? 'Perhatian - Volume naik tapi penyelesaian stagnan' :
-                'Stabil';
-        doc.text(`   - Interpretasi: ${trendEval}`, 14, yPos);
-
-        // === PAGE 3: REKOMENDASI ===
-        doc.addPage();
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.text('3. REKOMENDASI STRATEGIS', 14, 20);
-
-        yPos = 30;
-        doc.setFontSize(10);
-
-        // Generate smart recommendations
         const recommendations = [];
+        if (completionRate < 80) recommendations.push('Tingkatkan kecepatan penyelesaian berkas untuk mencapai target >80%.');
+        if (alerts > 0) recommendations.push(`Segera tindak lanjuti ${alerts} kasus yang melebihi batas waktu (SLA).`);
+        if (trends.total.isUp) recommendations.push('Antisipasi peningkatan beban kerja dengan optimalisasi SDM.');
+        else recommendations.push('Volume permintaan menurun, lakukan evaluasi faktor eksternal.');
+        recommendations.push(`Pertahankan kualitas layanan pada asuransi dominan: ${topInsurances[0]?.name || '-'}.`);
 
-        if (completionRate < 70) {
-            recommendations.push('Tingkatkan efisiensi penyelesaian kasus menjadi minimal 70%');
-        }
-        if (avgProcessingTime > 7) {
-            recommendations.push('Optimalkan waktu proses menjadi maksimal 7 hari');
-        }
-        if (alerts > stats.total * 0.1) {
-            recommendations.push(`Prioritaskan ${alerts} kasus alert untuk mencegah eskalasi`);
-        }
-        if (stats.pending > stats.total * 0.3) {
-            recommendations.push('Alokasi resource tambahan untuk handle backlog pending');
-        }
-        if (topDoctors.length > 0 && topDoctors[0].percentage > 30) {
-            recommendations.push('Distribusi beban kerja lebih merata antar dokter');
-        }
-        if (trends.total.isUp && parseFloat(trends.total.value) > 20) {
-            recommendations.push('Antisipasi lonjakan volume dengan penambahan kapasitas');
-        }
-
-        recommendations.forEach((rec, idx) => {
-            doc.setFont('helvetica', 'bold');
-            doc.text(`${idx + 1}.`, 14, yPos);
-            doc.setFont('helvetica', 'normal');
-            const lines = doc.splitTextToSize(rec, 170);
-            doc.text(lines, 20, yPos);
-            yPos += lines.length * 6 + 5;
+        let recY = 30;
+        recommendations.forEach((rec, i) => {
+            doc.text(`${i + 1}. ${rec}`, 25, recY);
+            recY += 7;
         });
 
-        // === PAGE 4: DATA TABLES ===
-        doc.addPage();
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.text('4. DATA DETAIL', 14, 20);
+        // === KOLOM TANDA TANGAN ===
+        const signY = 220; // Posisi tanda tangan di bawah halaman kedua
+        const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-        // Status Distribution Table
-        doc.setFontSize(12);
-        doc.text('Distribusi Status', 14, 35);
+        // Kanan: Pembuat Laporan
+        doc.text(`Dicetak di: ${profile.address.split(',')[1] || 'Tempat'}, ${dateStr}`, pageWidth - 60, signY - 5, { align: 'center' });
+        doc.text('Petugas Pelaporan', pageWidth - 60, signY + 5, { align: 'center' });
+        doc.text('( ................................. )', pageWidth - 60, signY + 30, { align: 'center' });
+        doc.text('NIP/NIK: .........................', pageWidth - 60, signY + 35, { align: 'center' });
 
-        autoTable(doc, {
-            startY: 40,
-            head: [['Status', 'Jumlah', 'Persentase', 'Trend']],
-            body: [
-                ['Total', stats.total, '100%', `${trends.total.isUp ? 'Naik' : 'Turun'} ${trends.total.value}%`],
-                ['Pending', stats.pending, `${((stats.pending / stats.total) * 100).toFixed(1)}%`, `${trends.pending.isUp ? 'Naik' : 'Turun'} ${trends.pending.value}%`],
-                ['Proses', stats.proses, `${((stats.proses / stats.total) * 100).toFixed(1)}%`, `${trends.proses.isUp ? 'Naik' : 'Turun'} ${trends.proses.value}%`],
-                ['Selesai', stats.selesai, `${((stats.selesai / stats.total) * 100).toFixed(1)}%`, `${trends.selesai.isUp ? 'Naik' : 'Turun'} ${trends.selesai.value}%`],
-                ['Sudah Diambil', stats.diambil, `${((stats.diambil / stats.total) * 100).toFixed(1)}%`, '-'],
-                ['Ditolak', stats.ditolak, `${((stats.ditolak / stats.total) * 100).toFixed(1)}%`, '-'],
-            ],
-            theme: 'grid',
-            headStyles: { fillColor: [51, 65, 85] }
-        });
+        // Kiri: Mengetahui (Opsional)
+        doc.text('Mengetahui,', 60, signY + 5, { align: 'center' });
+        doc.text('Kepala Instalasi Rekam Medis', 60, signY + 10, { align: 'center' });
+        doc.text('( ................................. )', 60, signY + 30, { align: 'center' });
+        doc.text('NIP: .........................', 60, signY + 35, { align: 'center' });
 
-        // Insurance Distribution
-        const finalY = doc.lastAutoTable.finalY + 15;
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Distribusi Asuransi', 14, finalY);
-
-        autoTable(doc, {
-            startY: finalY + 5,
-            head: [['Rank', 'Nama Asuransi', 'Jumlah', 'Persentase']],
-            body: topInsurances.map(item => [
-                `#${item.rank}`,
-                item.name,
-                item.count,
-                `${item.percentage}%`
-            ]),
-            theme: 'grid',
-            headStyles: { fillColor: [51, 65, 85] }
-        });
-
-        // Save
-        const fileName = `Laporan_Eksekutif_${startDate.replace(/\//g, '-')}_${endDate.replace(/\//g, '-')}.pdf`;
+        // Save PDF
+        const fileName = `Laporan_Eksekutif_${new Date(dateRange.start).toLocaleDateString('id-ID').replace(/\//g, '-')}_sd_${new Date(dateRange.end).toLocaleDateString('id-ID').replace(/\//g, '-')}.pdf`;
         doc.save(fileName);
 
-        ActivityLogger.log('EXPORT', {
-            module: 'Reports',
-            description: `Exported executive report (${stats.total} requests)`,
-            target: fileName
+        ActivityLogger.log('EXPORT_PDF', {
+            description: `Generated PDF Report for period ${startDate} - ${endDate}`,
+            fileName
+        });
+
+        return true;
+
+    } catch (error) {
+        console.error('PDF Generation Error:', error);
+        alert('Gagal membuat PDF. Cek console untuk detail.');
+    }
+};
+
+/**
+ * Generate Excel Report
+ */
+export const generateExcelReport = (requests, dateRange) => {
+    try {
+        const wb = XLSX.utils.book_new();
+
+        // 1. Sheet Utama: Data Mentah
+        // Filter data sesuai range dulu jika belum difilter di luar, tapi asumsi 'requests' sudah raw data
+        // Kita format date nya biar rapi
+        const formattedData = requests.map(req => ({
+            'ID Sistem': req.id,
+            'No. RM': req.regNumber,
+            'Nama Pasien': req.patientName,
+            'Status': req.status,
+            'Penjamin': req.insuranceName,
+            'Dokter': req.doctorName,
+            'Jenis Permintaan': req.type,
+            'Tanggal Masuk': req.createdAt ? new Date(req.createdAt).toLocaleDateString('id-ID') : '-',
+            'Waktu Masuk': req.createdAt ? new Date(req.createdAt).toLocaleTimeString('id-ID') : '-',
+            'Keterangan': req.notes || '-'
+        }));
+
+        const wsData = XLSX.utils.json_to_sheet(formattedData);
+        XLSX.utils.book_append_sheet(wb, wsData, "Data Permintaan");
+
+        // 2. Sheet Statistik
+        // Kita hitung simple stats
+        const statsData = [
+            ['Statistik Periode', `${dateRange.start} s/d ${dateRange.end}`],
+            ['', ''],
+            ['Total Permintaan', requests.length],
+            ['Selesai', requests.filter(r => r.status === 'Selesai').length],
+            ['Pending', requests.filter(r => r.status === 'Pending').length],
+            ['Proses', requests.filter(r => r.status === 'Proses').length],
+        ];
+        const wsStats = XLSX.utils.aoa_to_sheet(statsData);
+        XLSX.utils.book_append_sheet(wb, wsStats, "Ringkasan");
+
+        // Save
+        const fileName = `Export_Data_MPIM_${new Date().getTime()}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+
+        ActivityLogger.log('EXPORT_EXCEL', {
+            description: `Exported Excel Data (${formattedData.length} rows)`,
+            fileName
         });
 
         return true;
     } catch (error) {
-        console.error('Error generating report:', error);
-        throw error;
+        console.error('Excel Generation Error:', error);
+        alert('Gagal export Excel.');
     }
 };

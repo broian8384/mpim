@@ -12,57 +12,81 @@ export default function Help() {
             description: 'Buat, edit, dan kelola permintaan informasi medis pasien.',
             tips: [
                 'Klik tombol "+ Permintaan Baru" untuk membuat permintaan',
-                'Gunakan filter dan search untuk mencari data',
-                'Export ke Excel atau PDF untuk laporan',
-                'Klik icon Print untuk cetak bukti permintaan'
-            ]
-        },
-        {
-            icon: <Book className="w-6 h-6" />,
-            title: 'Laporan & Analisis',
-            description: 'Dashboard reporting dengan analisis data lengkap.',
-            tips: [
-                'Filter berdasarkan periode waktu',
-                'Lihat grafik trend permintaan',
-                'Download Laporan Executive dalam format PDF',
-                'Reset filter untuk kembali ke periode default'
+                'Gunakan filter dan search untuk mencari data spesifik',
+                'Export ke Excel atau PDF untuk laporan fisik',
+                'Klik icon Print untuk cetak bukti penerimaan berkas'
             ]
         },
         {
             icon: <Shield className="w-6 h-6" />,
-            title: 'Activity Log',
-            description: 'Audit trail lengkap semua aktivitas sistem.',
+            title: 'Manajemen Pengguna (User)',
+            description: 'Kelola akun pengguna, hak akses, dan keamanan sistem.',
             tips: [
-                'Filter berdasarkan user, action, atau module',
-                'Gunakan date range untuk period tertentu',
-                'Export activity logs ke Excel/PDF',
-                'Tersedia untuk Super Admin saja'
+                'Hanya Super Admin yang dapat menambah user baru',
+                'Reset password user jika lupa kata sandi',
+                'Nonaktifkan akun staff yang sudah tidak aktif',
+                'Pantau aktivitas login user di Activity Log'
+            ]
+        },
+        {
+            icon: <Book className="w-6 h-6" />,
+            title: 'Data Master',
+            description: 'Kelola data referensi seperti Dokter, Asuransi, dan Layanan.',
+            tips: [
+                'Input data dokter & asuransi agar muncul di autocomplete',
+                'Standarisasi nama layanan untuk laporan yang rapi',
+                'Import data master dari Excel untuk input massal',
+                'Hapus data master yang tidak lagi digunakan'
             ]
         },
         {
             icon: <Zap className="w-6 h-6" />,
-            title: 'Backup & Restore',
-            description: 'Cadangkan dan pulihkan data sistem.',
+            title: 'Laporan & Analisis',
+            description: 'Dashboard reporting dengan analisis data lengkap.',
             tips: [
-                'Lakukan backup berkala (minimal 1x seminggu)',
-                'Simpan file backup di lokasi aman',
-                'Restore data dari file backup JSON',
-                'Verifikasi backup sebelum hapus data lama'
+                'Filter laporan berdasarkan periode tanggal custom',
+                'Analisis tren permintaan per bulan',
+                'Download Laporan Executive dalam format PDF',
+                'Pantau kinerja dan volume permintaan'
+            ]
+        },
+        {
+            icon: <Keyboard className="w-6 h-6" />,
+            title: 'Pengaturan Sistem',
+            description: 'Konfigurasi identitas instansi dan preferensi aplikasi.',
+            tips: [
+                'Upload Logo Instansi untuk kop surat otomatis',
+                'Isi data alamat & kontak untuk footer laporan',
+                'Konfigurasi auto-backup jadwal harian/mingguan',
+                'Pastikan data instansi selalu terupdate'
+            ]
+        },
+        {
+            icon: <Info className="w-6 h-6" />,
+            title: 'Backup & Restore',
+            description: 'Amankan data sistem dengan cadangan rutin.',
+            tips: [
+                'Sistem melakukan auto-backup sesuai jadwal (Default: Mingguan)',
+                'Download file backup JSON untuk disimpan di Cloud',
+                'Fitur Restore akan menggantikan seluruh data saat ini',
+                'Selalu cek folder %APPDATA%/mpim/backups'
             ]
         }
     ];
 
     return (
         <Layout>
-            <div className="p-8 max-w-6xl mx-auto">
+            <div className="p-8">
                 {/* Header */}
-                <div className="mb-8 text-center">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
+                <div className="mb-8 flex items-center gap-6">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl flex-shrink-0">
                         <CircleHelp className="w-8 h-8 text-blue-600" />
                     </div>
-                    <h1 className="text-3xl font-bold text-slate-900 mb-2">Panduan Pengguna MPIM</h1>
-                    <p className="text-lg text-slate-700 font-medium">Medical Portal Information Management</p>
-                    <p className="text-slate-500">Manajemen Penerimaan Informasi Medis</p>
+                    <div>
+                        <h1 className="text-3xl font-bold text-slate-900 mb-1">Panduan Pengguna MPIM</h1>
+                        <p className="text-lg text-slate-700 font-medium">Medical Portal Information Management</p>
+                        <p className="text-slate-500 text-sm">Dokumentasi lengkap penggunaan Medical Portal Information Management.</p>
+                    </div>
                 </div>
 
 

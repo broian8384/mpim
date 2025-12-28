@@ -2,6 +2,17 @@ import React from 'react';
 import { X, Printer, User, FileText, Building2, Phone, Mail } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
+// Helper: Format date as dd/mm/yyyy with leading zeros
+const formatDateDDMMYYYY = (dateStr) => {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '-';
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+};
+
 export default function PrintPreview({ request, onClose }) {
     const handlePrint = () => {
         window.print();
@@ -143,9 +154,9 @@ export default function PrintPreview({ request, onClose }) {
                                 <div className="flex border-b border-slate-200 pb-2">
                                     <span className="text-sm font-bold text-slate-600 w-48">Periode Berobat:</span>
                                     <span className="text-sm font-semibold text-slate-900">
-                                        {request.visitDateStart ? new Date(request.visitDateStart).toLocaleDateString('id-ID') : '-'}
+                                        {formatDateDDMMYYYY(request.visitDateStart)}
                                         {' - '}
-                                        {request.visitDateEnd ? new Date(request.visitDateEnd).toLocaleDateString('id-ID') : '-'}
+                                        {formatDateDDMMYYYY(request.visitDateEnd)}
                                     </span>
                                 </div>
                                 <div className="flex border-b border-slate-200 pb-2">
@@ -210,7 +221,7 @@ export default function PrintPreview({ request, onClose }) {
 
                         {/* Print Footer Note */}
                         <div className="mt-6 text-center text-xs text-slate-400 italic">
-                            <p>Dokumen ini dicetak dari MPIM System - Manajemen Penerimaan Informasi Medis</p>
+                            <p>Dokumen ini dicetak dari MPIM System - Medical Portal Information Management</p>
                             <p className="mt-1">Scan QR Code untuk tracking dan verifikasi</p>
                         </div>
                     </div>
